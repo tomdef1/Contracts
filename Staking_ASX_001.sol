@@ -147,14 +147,35 @@ contract Staking_ASX_001 is ReentrancyGuard {
         owner = newOwner;
     }
 
-    // Allows the owner to set a new lockup period
+    // Functions to change constructor perameters after deployment
+    // Setter function to change the staking period length
+    function setStakingPeriodLength(uint256 newLength) external onlyOwner {
+        require(newLength > 0, "Staking period length must be greater than 0");
+        stakingPeriodLength = newLength;
+    }
+
+    // Setter function to change the lockup period
     function setLockupPeriod(uint256 newLockupPeriod) external onlyOwner {
+        require(newLockupPeriod >= 0, "Lockup period cannot be negative");
         lockupPeriod = newLockupPeriod;
     }
 
-    // Allows the owner to set a new staking period length
-    function setStakingPeriodLength(uint256 newLength) external onlyOwner {
-        stakingPeriodLength = newLength;
+    // Setter function to change the staking token
+    function setStakingToken(address newStakingToken) external onlyOwner {
+        require(newStakingToken != address(0), "Staking token cannot be the zero address");
+        stakingToken = IERC20(newStakingToken);
+    }
+
+    // Setter function to change the reward token
+    function setRewardToken(address newRewardToken) external onlyOwner {
+        require(newRewardToken != address(0), "Reward token cannot be the zero address");
+        rewardToken = IERC20(newRewardToken);
+    }
+
+    // Setter function to change the total rewards
+    function setTotalRewards(uint256 newTotalRewards) external onlyOwner {
+        require(newTotalRewards >= 0, "Total rewards cannot be negative");
+        totalRewards = newTotalRewards;
     }
 
     // Allows the owner to add a controller
