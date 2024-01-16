@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
-// 0.8.19 as deploying on BNB
 
 /* 
 @d3ploy - all points actioned apart from below:
-#7 - Using 0.8.19 as supported by BNB Chain
+#7 - Using 0.8.20 as supported by BNB Chain
 #10 - Implemented where appropriate
 #13 - Implementing NatSpec in final deployed code as to keep working version easier to manage
 #14 - Code removed
@@ -36,8 +35,6 @@ contract Staking_Tom_DeFi_St001 is ReentrancyGuard {
     mapping(address => uint256) public lastStakedTime; // Maps an address to the last staking timestamp
     mapping(address => uint256) public rewards; // Maps an address to the reward amount
     mapping(address => bool) public isController; // Maps an address to a boolean indicating if it is an authorized controller
-
-
 
     // Events
     event Staked(address indexed user, uint256 amount, uint256 total);
