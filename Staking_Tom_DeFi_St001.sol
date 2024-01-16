@@ -10,11 +10,11 @@
 #16 - Added immutable where relevant
 */
 
-pragma solidity 0.8.19;
+pragma solidity 0.8.20;
 
-// 4.7.0 as compatible with non PUSH0 chains ie BNB & 0.8.19
-import "@openzeppelin/contracts@4.7.0/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts@4.7.0/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+using SafeERC20 for IERC20;
 
 // Declaring the contract
 contract Staking_Tom_DeFi_St001 is ReentrancyGuard {
@@ -32,10 +32,11 @@ contract Staking_Tom_DeFi_St001 is ReentrancyGuard {
     uint256 public rewardsDistributed;     // Total rewards distributed so far
 
     // Mappings with 0.8.18 mapping update
-    mapping(address staker => uint256 stakedAmount) public stakes;
-    mapping(address staker => uint256 lastStakingTimestamp) public lastStakedTime;
-    mapping(address staker => uint256 rewardAmount) public rewards;
-    mapping(address controller => bool isAuthorized) public isController;
+    mapping(address => uint256) public stakes; // Maps an address to the amount staked
+    mapping(address => uint256) public lastStakedTime; // Maps an address to the last staking timestamp
+    mapping(address => uint256) public rewards; // Maps an address to the reward amount
+    mapping(address => bool) public isController; // Maps an address to a boolean indicating if it is an authorized controller
+
 
 
     // Events
@@ -151,22 +152,17 @@ contract Staking_Tom_DeFi_St001 is ReentrancyGuard {
         return reward;
     }
 
-    // Ends the current staking period V3
+    // Ends the current staking period
     function endStakingPeriod() external onlyOwner {
         require(stakingActive, "Staking inactive");
         stakingActive = false;
 
-        // Update rewards for all stakers before ending the staking period
-        // This can be optimized depending on the number of stakers
-        for (address staker : stakers) {
-            if (stakes[staker] > 0) {
-                rewards[staker] += calculateReward(staker);
-            }
-        }
+        uint256 remainingRewards = totalRewards - rewardsDistributed;
+        // You might want to handle or transfer the remaining rewards here
 
-        // Emit event indicating the staking period has ended
-        emit StakingPeriodEnded();
+        emit StakingPeriodEnded(remainingRewards);
     }
+
 
     // Proposes a new owner, requires confirmation by the new owner
     function proposeOwnership(address _proposedOwner) external onlyOwner {
@@ -177,8 +173,7 @@ contract Staking_Tom_DeFi_St001 is ReentrancyGuard {
 
     // New owner claims ownership
     function claimOwnership() external {
-        require(msg.sender == proposedOwner, "Caller is
-        not the proposed owner");
+        require(msg.sender == proposedOwner, "Caller isnot the proposed owner");
         emit OwnershipTransferred(owner, proposedOwner);
         owner = proposedOwner;
         proposedOwner = address(0);
@@ -186,23 +181,13 @@ contract Staking_Tom_DeFi_St001 is ReentrancyGuard {
 
     // Allows the owner to set a new lockup period
     function setLockupPeriod(uint256 newLockupPeriod) external onlyOwner {
-        require(newLockupPeriod <= lockupPeriod, "New lockup period must be less than or equal to current");
+        require(newLockupPeriod <= lockupPeriod, "New period <= current");
         lockupPeriod = newLockupPeriod;
     }
 
     // Allows the owner to set a new staking period length
     function setStakingPeriodLength(uint256 newLength) external onlyOwner {
         stakingPeriodLength = newLength;
-    }
-
-    // Allows the owner to add a controller
-    function addController(address controller) external onlyOwner {
-        isController[controller] = true;
-    }
-
-    // Allows the owner to remove a controller
-    function removeController(address controller) external onlyOwner {
-        isController[controller] = false;
     }
 
     // Read function to get the remaining time of the staking period
