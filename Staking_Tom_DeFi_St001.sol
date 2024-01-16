@@ -1,5 +1,15 @@
 // SPDX-License-Identifier: MIT
 // 0.8.19 as deploying on BNB
+
+/* 
+@d3ploy - all points actioned apart from below:
+#7 - Using 0.8.19 as supported by BNB Chain
+#10 - Implemented where appropriate
+#13 - Implementing NatSpec in final deployed code as to keep working version easier to manage
+#14 - Code removed
+#16 - Added immutable where relevant
+*/
+
 pragma solidity 0.8.19;
 
 // 4.7.0 as compatible with non PUSH0 chains ie BNB & 0.8.19
@@ -9,23 +19,24 @@ import "@openzeppelin/contracts@4.7.0/security/ReentrancyGuard.sol";
 // Declaring the contract
 contract Staking_Tom_DeFi_St001 is ReentrancyGuard {
     // State variables
-    IERC20 public stakingToken;            // Token users will stake
-    IERC20 public rewardToken;             // Token users will earn as rewards
-
+    IERC20 public immutable stakingToken;            // Token users will stake
+    IERC20 public immutable rewardToken;             // Token users will earn as rewards
+    address public proposedOwner;          // Two-Step Validation in Critical Address Change
     address public owner;                  // Owner of the contract
     uint256 public lockupPeriod;           // Time that must pass before stakers can withdraw
     uint256 public stakingPeriodLength;    // Total length of the staking period
-    bool public stakingActive = false;     // Indicates if the staking period is currently active
+    bool public stakingActive;             // Indicates if the staking period is currently active
     uint256 public startTime;              // When the current staking period started
     uint256 public totalStaked;            // Total amount of tokens staked
     uint256 public totalRewards;           // Total amount of rewards to distribute
     uint256 public rewardsDistributed;     // Total rewards distributed so far
 
-    // Mappings
-    mapping(address => uint256) public stakes;          // Amount staked by each address
-    mapping(address => uint256) public lastStakedTime;  // Last time each address staked
-    mapping(address => uint256) public rewards;         // Rewards owed to each address
-    mapping(address => bool) public isController;       // Addresses allowed to perform certain restricted actions
+    // Mappings with 0.8.18 mapping update
+    mapping(address staker => uint256 stakedAmount) public stakes;
+    mapping(address staker => uint256 lastStakingTimestamp) public lastStakedTime;
+    mapping(address staker => uint256 rewardAmount) public rewards;
+    mapping(address controller => bool isAuthorized) public isController;
+
 
     // Events
     event Staked(address indexed user, uint256 amount, uint256 total);
@@ -40,12 +51,6 @@ contract Staking_Tom_DeFi_St001 is ReentrancyGuard {
         _;
     }
 
-    modifier onlyController() {
-        require(isController[msg.sender], "Caller is not a controller");
-        _;
-    }
-
-    // Constructor
     constructor(
         uint256 _stakingPeriodLength,
         uint256 _lockupPeriod,
@@ -53,7 +58,10 @@ contract Staking_Tom_DeFi_St001 is ReentrancyGuard {
         address _rewardToken,
         uint256 _totalRewards
     ) {
-        owner = msg.sender;                   // Sets the contract deployer as the owner
+        require(_stakingToken != address(0), "Staking token cannot be the zero address");
+        require(_rewardToken != address(0), "Reward token cannot be the zero address");
+
+        owner = msg.sender;                   
         stakingPeriodLength = _stakingPeriodLength;
         lockupPeriod = _lockupPeriod;
         stakingToken = IERC20(_stakingToken);
@@ -66,6 +74,10 @@ contract Staking_Tom_DeFi_St001 is ReentrancyGuard {
     // Starts the staking period
     function start() external onlyOwner {
         require(!stakingActive, "Staking already started");
+        // Check if the contract has enough reward tokens
+        uint256 rewardBalance = rewardToken.balanceOf(address(this));
+        require(totalRewards <= rewardBalance, "Insufficient reward tokens in contract");
+
         stakingActive = true;
         startTime = block.timestamp;
         rewardsDistributed = 0;
@@ -74,14 +86,19 @@ contract Staking_Tom_DeFi_St001 is ReentrancyGuard {
     // Allows users to stake tokens
     function stake(uint256 amount) external nonReentrant {
         require(amount > 0, "Cannot stake 0");
-        require(stakingToken.transferFrom(msg.sender, address(this), amount), "Stake failed");
+        // Check if staking is within the lockup period
+        require(block.timestamp < startTime + lockupPeriod, "Staking period has ended or lockup period has passed");
+        require(stakingActive, "Staking is not active");
+
+        // Use safeTransferFrom for token transfer
+        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
 
         if (stakingActive && stakes[msg.sender] > 0) {
             rewards[msg.sender] += calculateReward(msg.sender);
         }
 
         stakes[msg.sender] += amount;
-        totalStaked += amount;
+        totalStaked = totalStaked + amount;
         lastStakedTime[msg.sender] = block.timestamp;
 
         emit Staked(msg.sender, amount, stakes[msg.sender]);
@@ -92,14 +109,16 @@ contract Staking_Tom_DeFi_St001 is ReentrancyGuard {
         require(stakes[msg.sender] >= amount, "Withdrawing more than you have!");
         require(block.timestamp - lastStakedTime[msg.sender] > lockupPeriod, "Lockup period not yet passed");
 
-        if (stakingActive) {
-            rewards[msg.sender] += calculateReward(msg.sender);
-        }
-
+        // Calculate rewards irrespective of whether staking is currently active
+        rewards[msg.sender] += calculateReward(msg.sender);
         stakes[msg.sender] -= amount;
-        totalStaked -= amount;
-        require(stakingToken.transfer(msg.sender, amount), "Withdraw failed");
+        totalStaked = totalStaked - amount;
 
+        // Use safeTransfer for token transfer
+        stakingToken.safeTransfer(msg.sender, amount);
+
+        // Reset the last staked time to the current time to stop further reward accrual
+        lastStakedTime[msg.sender] = block.timestamp;
         emit Withdrawn(msg.sender, amount);
     }
 
@@ -113,8 +132,11 @@ contract Staking_Tom_DeFi_St001 is ReentrancyGuard {
         if (reward > 0) {
             rewards[msg.sender] = 0; // Prevent re-entrancy attack
             rewardsDistributed += reward;
-            require(rewardToken.transfer(msg.sender, reward), "Reward transfer failed");
-            emit RewardPaid(msg.sender, reward);
+
+            // Use safeTransfer for token transfer
+            rewardToken.safeTransfer(msg.sender, reward
+            );
+        emit RewardPaid(msg.sender, reward);
         }
     }
 
@@ -129,26 +151,42 @@ contract Staking_Tom_DeFi_St001 is ReentrancyGuard {
         return reward;
     }
 
-    // Ends the current staking period and returns any remaining rewards to the owner
+    // Ends the current staking period V3
     function endStakingPeriod() external onlyOwner {
-        require(stakingActive, "Staking is not currently active");
+        require(stakingActive, "Staking inactive");
         stakingActive = false;
-        uint256 remainingRewards = totalRewards - rewardsDistributed;
-        if (remainingRewards > 0) {
-            require(rewardToken.transfer(owner, remainingRewards), "Failed to return remaining rewards");
+
+        // Update rewards for all stakers before ending the staking period
+        // This can be optimized depending on the number of stakers
+        for (address staker : stakers) {
+            if (stakes[staker] > 0) {
+                rewards[staker] += calculateReward(staker);
+            }
         }
-        emit StakingPeriodEnded(remainingRewards);
+
+        // Emit event indicating the staking period has ended
+        emit StakingPeriodEnded();
     }
 
-    // Transfers ownership of the contract to a new owner
-    function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "New owner is the zero address");
-        emit OwnershipTransferred(owner, newOwner);
-        owner = newOwner;
+    // Proposes a new owner, requires confirmation by the new owner
+    function proposeOwnership(address _proposedOwner) external onlyOwner {
+        require(_proposedOwner != address(0), "Proposed owner is the zero address");
+        require(_proposedOwner != owner, "Proposed owner is already the owner");
+        proposedOwner = _proposedOwner;
+    }
+
+    // New owner claims ownership
+    function claimOwnership() external {
+        require(msg.sender == proposedOwner, "Caller is
+        not the proposed owner");
+        emit OwnershipTransferred(owner, proposedOwner);
+        owner = proposedOwner;
+        proposedOwner = address(0);
     }
 
     // Allows the owner to set a new lockup period
     function setLockupPeriod(uint256 newLockupPeriod) external onlyOwner {
+        require(newLockupPeriod <= lockupPeriod, "New lockup period must be less than or equal to current");
         lockupPeriod = newLockupPeriod;
     }
 
